@@ -60,7 +60,7 @@ namespace QuanLySinhVien.Controllers
         // UploadAvatar: giữ nguyên
 
         [HttpPost("upload-avatar/{id}")]
-        [Authorize(Roles = "Admin,GiangVien")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UploadAvatar(int id, IFormFile file)
         {
             var sinhVien = await _context.SinhVien.FindAsync(id);

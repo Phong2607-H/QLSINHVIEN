@@ -102,7 +102,7 @@ public class SinhVienApiTests : IClassFixture<ApiFactory>
         Assert.True(row.IsDeleted); // vẫn còn trong DB, chỉ bị đánh dấu
     }
 
-    // 4. Phân quyền: chưa đăng nhập → 401, Giảng viên thêm SV → 403
+    // 4. Phân quyền: chưa đăng nhập → 401, Giảng viên thêm SV / đổi ảnh → 403
     [Fact]
     public async Task PhanQuyen_401Va403()
     {
@@ -112,6 +112,10 @@ public class SinhVienApiTests : IClassFixture<ApiFactory>
         var giangVien = await TaoClientAsync("GiangVien");
         var res = await giangVien.PostAsJsonAsync("/api/SinhVien", SinhVienMoi());
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+
+        var anh = new MultipartFormDataContent { { new ByteArrayContent(new byte[] { 0xFF, 0xD8 }), "file", "a.jpg" } };
+        var upload = await giangVien.PostAsync("/api/SinhVien/upload-avatar/1", anh);
+        Assert.Equal(HttpStatusCode.Forbidden, upload.StatusCode);
     }
 
     // 5. Dữ liệu sai → 400 kèm câu lỗi tiếng Việt
