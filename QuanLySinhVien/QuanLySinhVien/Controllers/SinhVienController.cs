@@ -48,13 +48,10 @@ namespace QuanLySinhVien.Controllers
             return NoContent();
         }
 
-        [HttpDelete("{id}")]
+        [HttpGet("deleted")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Delete(int id)
-        {
-            await _service.DeleteAsync(id);
-            return NoContent();
-        }
+        public async Task<ActionResult<List<SinhVienDto>>> GetDeleted()
+    => Ok(await _service.GetDeletedAsync());
 
         // SinhVienExists: xóa (không còn dùng)
         // UploadAvatar: giữ nguyên

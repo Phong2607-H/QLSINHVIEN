@@ -112,12 +112,23 @@ namespace QuanLySinhVien.Services
             }
         }
 
-        public async Task DeleteAsync(int id)
-        {
-            var sv = await TimHoacBaoLoiAsync(id);
-            sv.IsDeleted = true; // xóa mềm
-            await _context.SaveChangesAsync();
-        }
+        // Danh sách trong thùng rác: BẮT BUỘC IgnoreQueryFilters, nếu không filter sẽ ẩn hết
+        public async Task<List<SinhVienDto>> GetDeletedAsync() =>
+            await _context.SinhVien
+                .IgnoreQueryFilters()
+                .Where(s => s.IsDeleted)
+                .AsNoTracking()
+                .OrderBy(s => s.Id)
+                .Select(s => new SinhVienDto
+                {
+                    Id = s.Id,
+                    HoTen = s.HoTen,
+                    Email = s.Email,
+                    Tuoi = s.Tuoi,
+                    AvatarUrl = s.AvatarUrl,
+                    RowVersion = s.RowVersion
+                })
+                .ToListAsync();
 
         private async Task<SinhVien> TimHoacBaoLoiAsync(int id) =>
             await _context.SinhVien.FindAsync(id)
