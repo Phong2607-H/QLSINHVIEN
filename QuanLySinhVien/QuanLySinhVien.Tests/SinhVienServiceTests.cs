@@ -5,6 +5,9 @@ using QuanLySinhVien.Exceptions;
 using QuanLySinhVien.Models;
 using QuanLySinhVien.Services;
 using System.Net;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace QuanLySinhVien.Tests;
 
@@ -25,6 +28,11 @@ public class SinhVienServiceTests
         return db;
     }
 
+
+    // Service cần IWebHostEnvironment và ILogger → dùng đối tượng giả cho Unit Test
+    private static SinhVienService TaoService(AppDbContext db) =>
+        new SinhVienService(db, Mock.Of<IWebHostEnvironment>(), NullLogger<SinhVienService>.Instance);
+
     // ===== GetAll: mọi nhánh của switch sắp xếp =====
     [Theory]
     [InlineData("hoten", false, 2)]   // An
@@ -38,7 +46,7 @@ public class SinhVienServiceTests
     [InlineData(null, false, 1)]      // không truyền SortBy
     public async Task GetAll_SapXep_DungThuTu(string? sortBy, bool desc, int idDauTien)
     {
-        var service = new SinhVienService(TaoDb());
+        var service = TaoService(TaoDb());
 
         var result = await service.GetAllAsync(new SinhVienQuery { SortBy = sortBy, IsDescending = desc });
 
@@ -48,7 +56,7 @@ public class SinhVienServiceTests
     [Fact]
     public async Task GetAll_TimKiem_VaChanPhanTrangSai()
     {
-        var service = new SinhVienService(TaoDb());
+        var service = TaoService(TaoDb());
 
         var result = await service.GetAllAsync(new SinhVienQuery { Keyword = " AN ", PageNumber = 0, PageSize = 100 });
 
@@ -62,14 +70,14 @@ public class SinhVienServiceTests
     [Fact]
     public async Task GetById_CoTonTai_TraVeDto()
     {
-        var dto = await new SinhVienService(TaoDb()).GetByIdAsync(2);
+        var dto = await TaoService(TaoDb()).GetByIdAsync(2);
         Assert.Equal("An", dto.HoTen);
     }
 
     [Fact]
     public async Task GetById_KhongTonTai_NemNotFound()
     {
-        await Assert.ThrowsAsync<NotFoundException>(() => new SinhVienService(TaoDb()).GetByIdAsync(99));
+        await Assert.ThrowsAsync<NotFoundException>(() => TaoService(TaoDb()).GetByIdAsync(99));
     }
 
     // ===== Create =====
@@ -77,7 +85,7 @@ public class SinhVienServiceTests
     public async Task Create_HopLe_LuuVaoDb()
     {
         var db = TaoDb();
-        var created = await new SinhVienService(db)
+        var created = await TaoService(db)
             .CreateAsync(new SinhVienDto { HoTen = "Moi", Email = "moi@x.com", Tuoi = 19 });
 
         Assert.True(created.Id > 0);
@@ -87,7 +95,7 @@ public class SinhVienServiceTests
     [Fact]
     public async Task Create_EmailTrung_KhongPhanBietHoaThuong_NemConflict()
     {
-        await Assert.ThrowsAsync<ConflictException>(() => new SinhVienService(TaoDb())
+        await Assert.ThrowsAsync<ConflictException>(() => TaoService(TaoDb())
             .CreateAsync(new SinhVienDto { HoTen = "X", Email = "A@X.COM", Tuoi = 19 }));
     }
 
@@ -97,7 +105,7 @@ public class SinhVienServiceTests
     public async Task Update_HopLe_CapNhatDuLieu()
     {
         var db = TaoDb();
-        await new SinhVienService(db)
+        await TaoService(db)
             .UpdateAsync(1, new SinhVienDto { Id = 1, HoTen = "Binh Moi", Email = "c@x.com", Tuoi = 30, RowVersion = new byte[] { 1 } });
 
         var sv = await db.SinhVien.FindAsync(1);
@@ -108,28 +116,28 @@ public class SinhVienServiceTests
     [Fact]
     public async Task Update_IdKhongKhop_NemBadRequest()
     {
-        await Assert.ThrowsAsync<BadRequestException>(() => new SinhVienService(TaoDb())
+        await Assert.ThrowsAsync<BadRequestException>(() => TaoService(TaoDb())
             .UpdateAsync(1, new SinhVienDto { Id = 2, HoTen = "X", Email = "x@x.com", Tuoi = 20 }));
     }
 
     [Fact]
     public async Task Update_ThieuRowVersion_NemBadRequest()
     {
-        await Assert.ThrowsAsync<BadRequestException>(() => new SinhVienService(TaoDb())
+        await Assert.ThrowsAsync<BadRequestException>(() => TaoService(TaoDb())
             .UpdateAsync(1, new SinhVienDto { Id = 1, HoTen = "X", Email = "c@x.com", Tuoi = 20 }));
     }
 
     [Fact]
     public async Task Update_KhongTonTai_NemNotFound()
     {
-        await Assert.ThrowsAsync<NotFoundException>(() => new SinhVienService(TaoDb())
+        await Assert.ThrowsAsync<NotFoundException>(() => TaoService(TaoDb())
             .UpdateAsync(99, new SinhVienDto { Id = 99, HoTen = "X", Email = "x@x.com", Tuoi = 20, RowVersion = new byte[] { 1 } }));
     }
 
     [Fact]
     public async Task Update_EmailCuaNguoiKhac_NemConflict()
     {
-        await Assert.ThrowsAsync<ConflictException>(() => new SinhVienService(TaoDb())
+        await Assert.ThrowsAsync<ConflictException>(() => TaoService(TaoDb())
             .UpdateAsync(1, new SinhVienDto { Id = 1, HoTen = "Binh", Email = "b@x.com", Tuoi = 22, RowVersion = new byte[] { 1 } }));
     }
 
@@ -138,7 +146,7 @@ public class SinhVienServiceTests
     public async Task Delete_LaXoaMem()
     {
         var db = TaoDb();
-        await new SinhVienService(db).DeleteAsync(1);
+        await TaoService(db).DeleteAsync(1);
 
         var sv = await db.SinhVien.IgnoreQueryFilters().SingleAsync(s => s.Id == 1);
         Assert.True(sv.IsDeleted);
@@ -148,7 +156,7 @@ public class SinhVienServiceTests
     [Fact]
     public async Task Delete_KhongTonTai_NemNotFound()
     {
-        await Assert.ThrowsAsync<NotFoundException>(() => new SinhVienService(TaoDb()).DeleteAsync(99));
+        await Assert.ThrowsAsync<NotFoundException>(() => TaoService(TaoDb()).DeleteAsync(99));
     }
     
 }

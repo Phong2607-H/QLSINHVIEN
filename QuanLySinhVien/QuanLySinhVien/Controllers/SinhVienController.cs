@@ -48,10 +48,34 @@ namespace QuanLySinhVien.Controllers
             return NoContent();
         }
 
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _service.DeleteAsync(id);
+            return NoContent();
+        }
+
         [HttpGet("deleted")]
         [Authorize(Roles = "Admin")]
         public async Task<ActionResult<List<SinhVienDto>>> GetDeleted()
     => Ok(await _service.GetDeletedAsync());
+
+        [HttpDelete("{id:int}/force")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> ForceDelete(int id)
+        {
+            await _service.ForceDeleteAsync(id);
+            return NoContent();                       // 204: đã xóa vĩnh viễn
+        }
+
+        [HttpPut("{id:int}/restore")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> Restore(int id, KhoiPhucDto dto)
+        {
+            await _service.RestoreAsync(id, dto);
+            return NoContent();                       // 204: thành công, không cần trả dữ liệu
+        }
 
         // SinhVienExists: xóa (không còn dùng)
         // UploadAvatar: giữ nguyên

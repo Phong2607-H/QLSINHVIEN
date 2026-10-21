@@ -9,8 +9,15 @@ namespace QuanLySinhVien.Services
     public class SinhVienService
     {
         private readonly AppDbContext _context;
+        private readonly IWebHostEnvironment _env;             // để biết WebRootPath ("tên tòa nhà")
+        private readonly ILogger<SinhVienService> _logger;     // để ghi cảnh báo khi xóa file lỗi
 
-        public SinhVienService(AppDbContext context) => _context = context;
+        public SinhVienService(AppDbContext context, IWebHostEnvironment env, ILogger<SinhVienService> logger)
+        {
+            _context = context;
+            _env = env;
+            _logger = logger;
+        }
 
         public async Task<PagedResult<SinhVienDto>> GetAllAsync(SinhVienQuery query)
         {
@@ -112,6 +119,13 @@ namespace QuanLySinhVien.Services
             }
         }
 
+        public async Task DeleteAsync(int id)
+        {
+            var sv = await TimHoacBaoLoiAsync(id);
+            sv.IsDeleted = true; // xóa mềm
+            await _context.SaveChangesAsync();
+        }
+
         // Danh sách trong thùng rác: BẮT BUỘC IgnoreQueryFilters, nếu không filter sẽ ẩn hết
         public async Task<List<SinhVienDto>> GetDeletedAsync() =>
             await _context.SinhVien
@@ -130,6 +144,69 @@ namespace QuanLySinhVien.Services
                 })
                 .ToListAsync();
 
+        public async Task RestoreAsync(int id, KhoiPhucDto dto)
+        {
+            // 1. Không có phiên bản thì không so sánh được → từ chối ngay
+            if (dto.RowVersion is null)
+                throw new BadRequestException("Thiếu RowVersion! Vui lòng tải lại thùng rác rồi thử lại.");
+
+            // 2. Tìm trong thùng rác (không có → 404)
+            var sv = await TimTrongThungRacAsync(id);
+
+            // 3. Email có thể đã được người khác dùng trong lúc sinh viên này nằm thùng rác.
+            //    Câu này KHÔNG IgnoreQueryFilters → chỉ so với sinh viên đang học.
+            if (await _context.SinhVien.AnyAsync(s => s.Email.ToLower() == sv.Email.ToLower()))
+                throw new ConflictException($"Không thể khôi phục: email {sv.Email} đang được sinh viên khác sử dụng!");
+
+            // 4. ★ So với phiên bản người dùng ĐANG THẤY, không phải bản vừa đọc từ DB
+            _context.Entry(sv).Property(s => s.RowVersion).OriginalValue = dto.RowVersion;
+
+            // 5. Khôi phục: đưa từ kho về lại kệ
+            sv.IsDeleted = false;
+
+            // 6. Lưu. Nếu phiên bản không khớp → EF ném DbUpdateConcurrencyException
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                throw new ConflictException(
+                    "Sinh viên vừa bị người khác thay đổi. Vui lòng tải lại thùng rác rồi thử lại!");
+            }
+        }
+
+        public async Task ForceDeleteAsync(int id)
+        {
+            // 1. Chỉ xóa vĩnh viễn được khi sinh viên ĐANG Ở TRONG THÙNG RÁC (không có → 404)
+            var sv = await TimTrongThungRacAsync(id);
+
+            // 2. Xóa file ảnh TRƯỚC khi Remove (theo đề).
+            //    Xóa file lỗi KHÔNG được chặn việc xóa dữ liệu → bắt lỗi, ghi log, đi tiếp.
+            if (!string.IsNullOrEmpty(sv.AvatarUrl))
+            {
+                // "/avatars/abc.jpg" → "D:\...\wwwroot\avatars\abc.jpg"
+                var path = Path.Combine(_env.WebRootPath, sv.AvatarUrl.TrimStart('/'));
+                try
+                {
+                    System.IO.File.Delete(path);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Không xóa được file ảnh {Path}, vẫn tiếp tục xóa dữ liệu.", path);
+                }
+            }
+
+            // 3. Xóa vật lý: cho vào "máy hủy giấy"
+            _context.SinhVien.Remove(sv);
+            await _context.SaveChangesAsync();   // SQL: DELETE FROM SinhVien WHERE Id = ...
+        }
+        // Chỉ tìm sinh viên ĐANG Ở TRONG THÙNG RÁC
+        private async Task<SinhVien> TimTrongThungRacAsync(int id) =>
+            await _context.SinhVien
+                .IgnoreQueryFilters()                                 // được phép "vào kho"
+                .FirstOrDefaultAsync(s => s.Id == id && s.IsDeleted)  // phải đang trong kho
+            ?? throw new NotFoundException($"Không tìm thấy sinh viên Id = {id} trong thùng rác!");
         private async Task<SinhVien> TimHoacBaoLoiAsync(int id) =>
             await _context.SinhVien.FindAsync(id)
             ?? throw new NotFoundException($"Không tìm thấy sinh viên có Id = {id}!");
